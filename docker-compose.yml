@@ -1,0 +1,26 @@
+services:
+  # Demo signup backend integrating the Hansestack leak-check client.
+  leakcheck-demo:
+    build: .
+    container_name: leakcheck-demo
+    restart: on-failure
+    stop_grace_period: 20s
+    ports:
+      - "${LEAKCHECK_SERVE_PORT:-8080}:8080"
+    env_file:
+      - .env
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      # The container always listens on 8080 internally; the host port is
+      # mapped above. This overrides any value inherited from .env.
+      LEAKCHECK_SERVE_PORT: 8080
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      # Probes this service only. It deliberately does not depend on the
+      # Hansestack API: an upstream outage must not mark the demo unhealthy.
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/health || exit 1"]
+      start_period: 5s
+      interval: 30s
+      timeout: 2s
+      retries: 3

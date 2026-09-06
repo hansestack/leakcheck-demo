@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Vulnerability Check
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: 'stable'
+          work-dir: .
+
+      - name: Test
+        run: make test
+
+      - name: Docker Build Check
+        run: docker build -t leakcheck-demo-test .

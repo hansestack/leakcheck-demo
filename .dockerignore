@@ -1,0 +1,12 @@
+# Secrets must never enter the build context; compose injects .env at runtime.
+.env
+
+.git
+.github
+bin/
+*.out
+coverage.*
+README.md
+Makefile
+docker-compose.yml
+.golangci.yml
