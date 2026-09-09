@@ -48,10 +48,18 @@ func init() {
 //
 // The defaults are the production-correct ones: a 500ms timeout and fail-open
 // error handling. FailClose is exposed only so the demo can show both modes.
+//
+// The circuit breaker is enabled as a best practice: without it, an outage of
+// the Hansestack API costs every login the full request timeout, because each
+// call waits out its own deadline. With WithCircuitBreaker, once
+// BreakerThreshold consecutive requests fail the client stops calling out for
+// BreakerCooldown and fails open immediately, then lets a single probe
+// through once the cooldown elapses.
 func newClient() *leakcheck.Client {
 	opts := []leakcheck.Option{
 		leakcheck.WithTimeout(appCfg.LeakCheck.Timeout),
 		leakcheck.WithLogger(slog.Default()),
+		leakcheck.WithCircuitBreaker(appCfg.LeakCheck.BreakerThreshold, appCfg.LeakCheck.BreakerCooldown),
 	}
 	if appCfg.LeakCheck.FailClose {
 		opts = append(opts, leakcheck.WithFailClose())
@@ -69,16 +77,16 @@ func runCheck(cmd *cobra.Command, _ []string) error {
 		return errors.New("no password supplied: pipe one via stdin or use --password")
 	}
 
-	leaked, count, err := newClient().CheckPassword(context.Background(), password)
+	res, err := newClient().CheckPassword(context.Background(), password)
 	if err != nil {
 		// Only reachable with LEAKCHECK_FAIL_CLOSE=true. In a real login flow
 		// you would log this and continue; a CLI may legitimately surface it.
 		return fmt.Errorf("leak check failed: %w", err)
 	}
 
-	if leaked {
+	if res.Leaked {
 		if !checkQuiet {
-			cmd.Printf("LEAKED: this password appeared in %d known data breaches\n", count)
+			cmd.Printf("LEAKED: this password appeared in %d known data breaches\n", res.Count)
 		}
 		// Bypass cobra's error handling to control the exit code precisely.
 		os.Exit(exitLeaked)

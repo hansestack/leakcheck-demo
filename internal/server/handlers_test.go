@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/hansestack/hansestack-go/leakcheck"
 )
 
 // stubChecker is a programmable PasswordChecker.
@@ -20,10 +22,15 @@ type stubChecker struct {
 	calls  int
 }
 
-func (s *stubChecker) CheckPassword(_ context.Context, _ string) (bool, int, error) {
+func (s *stubChecker) CheckPassword(_ context.Context, _ string) (leakcheck.Result, error) {
 	s.calls++
 
-	return s.leaked, s.count, s.err
+	outcome := leakcheck.OutcomeChecked
+	if s.err != nil {
+		outcome = leakcheck.OutcomeSkippedError
+	}
+
+	return leakcheck.Result{Leaked: s.leaked, Count: s.count, Outcome: outcome}, s.err
 }
 
 // newTestServer returns a Server with logging discarded.
@@ -239,13 +246,13 @@ func TestHealthIgnoresLeakCheck(t *testing.T) {
 }
 
 func TestFailingCheckerAlwaysErrors(t *testing.T) {
-	leaked, count, err := NewFailingChecker().CheckPassword(context.Background(), "pw")
+	res, err := NewFailingChecker().CheckPassword(context.Background(), "pw")
 
 	if err == nil {
 		t.Fatal("err = nil, want a simulated outage error")
 	}
-	if leaked || count != 0 {
-		t.Errorf("got (%v, %d), want (false, 0)", leaked, count)
+	if res.Leaked || res.Count != 0 {
+		t.Errorf("got %+v, want (false, 0)", res)
 	}
 }
 

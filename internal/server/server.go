@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+
+	"github.com/hansestack/hansestack-go/leakcheck"
 )
 
 // PasswordChecker is the subset of the leak-check client this package needs.
@@ -18,7 +20,7 @@ import (
 // Depending on an interface rather than the concrete *leakcheck.Client keeps
 // the handlers testable without network access.
 type PasswordChecker interface {
-	CheckPassword(ctx context.Context, password string) (bool, int, error)
+	CheckPassword(ctx context.Context, password string) (leakcheck.Result, error)
 }
 
 // Server holds the demo's dependencies and its in-memory user store.

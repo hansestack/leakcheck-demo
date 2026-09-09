@@ -87,6 +87,8 @@ with real environment variables taking precedence.
 | `LEAKCHECK_API_KEY` | — | **Required.** Get one at [portal.hansestack.de](https://portal.hansestack.de) |
 | `LEAKCHECK_TIMEOUT` | `500ms` | Per-request timeout |
 | `LEAKCHECK_FAIL_CLOSE` | `false` | Return errors instead of failing open |
+| `LEAKCHECK_BREAKER_THRESHOLD` | `3` | Consecutive failures before the circuit breaker opens (`<=0` disables it) |
+| `LEAKCHECK_BREAKER_COOLDOWN` | `30s` | How long the breaker stays open before letting a single probe request through |
 | `LEAKCHECK_SERVE_PORT` | `8080` | HTTP port |
 | `LEAKCHECK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `LEAKCHECK_APP_ENVIRONMENT` | `development` | `production` switches slog to JSON |
@@ -97,23 +99,40 @@ with real environment variables taking precedence.
 ## The integration, in full
 
 ```go
-leaked, count, err := s.leaks.CheckPassword(r.Context(), req.Password)
+res, err := s.leaks.CheckPassword(r.Context(), req.Password)
 if err != nil {
 	// FAIL OPEN. Log and continue as if the password were safe.
-	s.logger.WarnContext(r.Context(), "leak check unavailable, continuing signup", "err", err)
+	s.logger.WarnContext(r.Context(), "leak check unavailable, continuing signup",
+		"err", err, "outcome", res.Outcome)
 }
 
-if leaked {
+if res.Leaked {
 	// A confirmed leak is a validation failure: 4xx, not 5xx.
 	writeJSON(w, http.StatusBadRequest, errorResponse{...})
 	return
 }
 ```
 
+`CheckPassword` returns a `leakcheck.Result{ Leaked bool; Count int; Outcome
+Outcome }`. `Leaked` and `Count` are only meaningful when `res.Outcome ==
+leakcheck.OutcomeChecked`; for every other outcome (e.g. `skipped_timeout`,
+`skipped_rate_limited`, `skipped_circuit_open`) they hold the neutral
+fail-open values `false` / `0`. `Outcome` is what lets you tell "checked and
+clean" apart from "check never ran" in logs and metrics, without changing the
+fail-open policy.
+
 With the default fail-open client `err` is **always nil** — the library already
 caught the failure, logged it, and returned a neutral result. The `err` branch
 is only reachable under `LEAKCHECK_FAIL_CLOSE=true` or `--simulate-outage`.
 Handling it anyway keeps the code correct in both modes.
+
+The client is also built with a circuit breaker
+(`leakcheck.WithCircuitBreaker(threshold, cooldown)`, configured via
+`LEAKCHECK_BREAKER_THRESHOLD` / `LEAKCHECK_BREAKER_COOLDOWN`): after
+`threshold` consecutive unavailability failures it stops sending requests for
+`cooldown` and fails open immediately instead of paying the full request
+timeout on every call during an outage, then lets a single probe through once
+the cooldown elapses.
 
 ## Privacy
 

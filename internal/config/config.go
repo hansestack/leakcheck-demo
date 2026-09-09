@@ -38,4 +38,13 @@ type LeakCheckConfig struct {
 	APIKey    string        `env:"LEAKCHECK_API_KEY"    env-required:"true"`
 	Timeout   time.Duration `env:"LEAKCHECK_TIMEOUT"    env-default:"500ms"`
 	FailClose bool          `env:"LEAKCHECK_FAIL_CLOSE" env-default:"false"`
+
+	// BreakerThreshold and BreakerCooldown configure the client's circuit
+	// breaker (see leakcheck.WithCircuitBreaker). After BreakerThreshold
+	// consecutive unavailability failures (timeouts, connection errors, 5xx,
+	// 429) the client stops sending requests for BreakerCooldown and fails
+	// open immediately, instead of paying the full request timeout on every
+	// call during an outage. A non-positive threshold disables the breaker.
+	BreakerThreshold int           `env:"LEAKCHECK_BREAKER_THRESHOLD" env-default:"3"`
+	BreakerCooldown  time.Duration `env:"LEAKCHECK_BREAKER_COOLDOWN"  env-default:"30s"`
 }

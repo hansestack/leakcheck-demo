@@ -72,13 +72,14 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pass the request context so the check inherits client cancellation.
-	leaked, count, err := s.leaks.CheckPassword(r.Context(), req.Password)
+	res, err := s.leaks.CheckPassword(r.Context(), req.Password)
 
 	// NOTE ON OBSERVABILITY: with the default fail-open client this error is
 	// ALWAYS nil, because the library already swallowed the failure and
 	// returned a neutral result. That is the correct production behaviour, but
 	// it means the caller cannot tell "checked and clean" apart from "check
-	// never ran" — you rely on the library's own WARN/ERROR logs instead.
+	// never ran" — you rely on res.Outcome or the library's own WARN/ERROR
+	// logs instead.
 	//
 	// The leakStatusUnavailable branch below is therefore only reachable with
 	// LEAKCHECK_FAIL_CLOSE=true or `serve --simulate-outage`. Both exist so
@@ -90,18 +91,18 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		// safe. Returning 5xx here would let a Hansestack outage lock every
 		// user out of registration.
 		s.logger.WarnContext(r.Context(), "leak check unavailable, continuing signup",
-			"err", err, "email", req.Email)
+			"err", err, "email", req.Email, "outcome", res.Outcome)
 		leakStatus = leakStatusUnavailable
 	}
 
-	if leaked {
+	if res.Leaked {
 		// A confirmed leak is a validation failure, not a server error.
 		s.logger.InfoContext(r.Context(), "signup rejected: leaked password",
-			"email", req.Email, "breach_count", count)
+			"email", req.Email, "breach_count", res.Count)
 		writeJSON(w, http.StatusBadRequest, errorResponse{
-			Error:     fmt.Sprintf("this password appeared in %d known data breaches, please choose another", count),
+			Error:     fmt.Sprintf("this password appeared in %d known data breaches, please choose another", res.Count),
 			LeakCheck: leakStatusLeaked,
-			Count:     count,
+			Count:     res.Count,
 		})
 
 		return
@@ -137,15 +138,15 @@ func (s *Server) handleCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	leaked, count, err := s.leaks.CheckPassword(r.Context(), req.Password)
+	res, err := s.leaks.CheckPassword(r.Context(), req.Password)
 	if err != nil {
-		s.logger.WarnContext(r.Context(), "leak check unavailable", "err", err)
+		s.logger.WarnContext(r.Context(), "leak check unavailable", "err", err, "outcome", res.Outcome)
 		writeJSON(w, http.StatusOK, checkResponse{Checked: false})
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, checkResponse{Leaked: leaked, Count: count, Checked: true})
+	writeJSON(w, http.StatusOK, checkResponse{Leaked: res.Leaked, Count: res.Count, Checked: true})
 }
 
 // createUser stores the user in memory. A real implementation would hash the
