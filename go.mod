@@ -3,7 +3,7 @@ module github.com/hansestack/leakcheck-demo
 go 1.26.1
 
 require (
-	github.com/hansestack/hansestack-go v0.2.0
+	github.com/hansestack/hansestack-go v0.3.0
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/spf13/cobra v1.10.2
 )
